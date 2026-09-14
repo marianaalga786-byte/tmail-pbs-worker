@@ -4,85 +4,28 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
+import AdminMessageModal from './AdminMessageModal';
+import AdminAppearanceSection from './components/AdminAppearanceSection';
+import AdminAliasCreateForm from './components/AdminAliasCreateForm';
+import AdminDomainsSection from './components/AdminDomainsSection';
+import AdminOverviewSection from './components/AdminOverviewSection';
+import AdminSecuritySection from './components/AdminSecuritySection';
+import {
+  ADMIN_THEMES,
+  ADMIN_THEME_MAP,
+  formatCompactDate,
+  formatDateTime,
+  hasActiveFilterConfig,
+  hasAliasConfig,
+  localizeErrorMessage,
+  paginateRows,
+  splitFilterInput
+} from './admin-utils';
 
 function useBootstrap() {
   useEffect(() => {
     import('bootstrap/dist/js/bootstrap.bundle.min.js');
   }, []);
-}
-
-function formatDateTime(value) {
-  if (!value) return '-';
-  const dt = new Date(value);
-  if (Number.isNaN(dt.getTime())) return String(value);
-  return dt.toLocaleString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  });
-}
-
-function formatCompactDate(value) {
-  if (!value) return '-';
-  const dt = new Date(value);
-  if (Number.isNaN(dt.getTime())) return String(value);
-  return dt.toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: '2-digit'
-  });
-}
-
-function splitFilterInput(value) {
-  return String(value || '')
-    .split(',')
-    .map((v) => v.trim())
-    .filter(Boolean);
-}
-
-function localizeErrorMessage(message) {
-  const raw = String(message || '').trim();
-  if (!raw) return 'Terjadi kesalahan. Silakan coba lagi.';
-
-  const lowered = raw.toLowerCase();
-  if (lowered.includes('unauthorized')) return 'Sesi admin tidak valid. Silakan login ulang.';
-  if (lowered.includes('forbidden')) return 'Akses ditolak untuk aksi ini.';
-  if (lowered.includes('domain not allowed')) return 'Domain belum diizinkan.';
-  if (lowered.includes('invalid')) return 'Data tidak valid. Periksa kembali input Anda.';
-  if (lowered.includes('failed to load')) return 'Gagal memuat data. Coba lagi beberapa saat.';
-  if (lowered.includes('request failed')) return 'Permintaan gagal diproses oleh server.';
-  return raw;
-}
-
-function hasActiveFilterConfig(config = {}) {
-  return Boolean(
-    (config.subjectExact && config.subjectExact.length) ||
-      (config.subjectIncludes && config.subjectIncludes.length) ||
-      (config.subjectExcludes && config.subjectExcludes.length) ||
-      (config.senderIncludes && config.senderIncludes.length) ||
-      (config.keywordIncludes && config.keywordIncludes.length) ||
-      config.customRegex
-  );
-}
-
-function hasAliasConfig(row) {
-  return hasActiveFilterConfig(row?.filterConfig || {}) || Boolean(row?.pinHash);
-}
-
-function paginateRows(rows, page, pageSize) {
-  const total = rows.length;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const safePage = Math.min(Math.max(1, page), totalPages);
-  const start = (safePage - 1) * pageSize;
-  return {
-    total,
-    totalPages,
-    page: safePage,
-    rows: rows.slice(start, start + pageSize)
-  };
 }
 
 export default function AdminPage() {
@@ -124,7 +67,7 @@ export default function AdminPage() {
   const [aliasKeywordIncludes, setAliasKeywordIncludes] = useState('');
   const [aliasCustomRegex, setAliasCustomRegex] = useState('');
   const [aliasPin, setAliasPin] = useState('');
-  const [aliasFilterOpen, setAliasFilterOpen] = useState(false);
+  const [aliasFilterMode, setAliasFilterMode] = useState('all');
   const [aliasListTab, setAliasListTab] = useState('all');
   const [inboxAlias, setInboxAlias] = useState('');
   const [inboxMessages, setInboxMessages] = useState([]);
@@ -654,6 +597,7 @@ export default function AdminPage() {
     setAliasKeywordIncludes('');
     setAliasCustomRegex('');
     setAliasPin('');
+    setAliasFilterMode('all');
   }
 
   function editAliasFilter(row) {
@@ -665,6 +609,11 @@ export default function AdminPage() {
     setAliasSenderIncludes((cfg.senderIncludes || []).join(', '));
     setAliasKeywordIncludes((cfg.keywordIncludes || []).join(', '));
     setAliasCustomRegex(cfg.customRegex || '');
+    const isNetflixPreset = (cfg.subjectExact || []).join(', ') === 'kode akses sementaramu, kode akses sementara netflix-mu' &&
+      (cfg.senderIncludes || []).join(', ') === 'info@account.netflix.com, netflix' &&
+      (cfg.keywordIncludes || []).join(', ') === 'kode akses sementara, netflix' &&
+      !(cfg.subjectIncludes || []).length && !(cfg.subjectExcludes || []).length && !cfg.customRegex;
+    setAliasFilterMode(isNetflixPreset ? 'netflix-household' : hasActiveFilterConfig(cfg) ? 'custom' : 'all');
   }
 
   async function saveAliasFilter() {
@@ -700,13 +649,32 @@ export default function AdminPage() {
     }
   }
 
-  function applyNetflixPreset() {
+  function setAliasFilterPreset(mode) {
+    setAliasFilterMode(mode);
+    if (mode === 'all') {
+      setAliasSubjectExact('');
+      setAliasSubjectIncludes('');
+      setAliasSubjectExcludes('');
+      setAliasSenderIncludes('');
+      setAliasKeywordIncludes('');
+      setAliasCustomRegex('');
+      return;
+    }
+    if (mode !== 'netflix-household') return;
     setAliasSubjectExact('kode akses sementaramu, kode akses sementara netflix-mu');
     setAliasSubjectIncludes('');
     setAliasSubjectExcludes('');
     setAliasSenderIncludes('info@account.netflix.com, netflix');
     setAliasKeywordIncludes('kode akses sementara, netflix');
     setAliasCustomRegex('');
+  }
+
+  function generateAliasAddress() {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let rand = '';
+    for (let i = 0; i < 10; i++) rand += chars[Math.floor(Math.random() * chars.length)];
+    const domain = aliasFormAddress.includes('@') ? aliasFormAddress.split('@')[1] : (activeDomains[0]?.name || '');
+    setAliasFormAddress(rand + (domain ? '@' + domain : ''));
   }
 
   async function loadAdminInbox(targetAlias = inboxAlias) {
@@ -739,47 +707,6 @@ export default function AdminPage() {
     }
   }
 
-  const ADMIN_THEMES = [
-    { id: 'blue', name: 'Ocean Blue', swatches: ['#667eea', '#764ba2'] },
-    { id: 'dark', name: 'Midnight Dark', swatches: ['#1e293b', '#6366f1'] },
-    { id: 'green', name: 'Forest Green', swatches: ['#10b981', '#0d9488'] },
-    { id: 'rose', name: 'Cherry Rose', swatches: ['#f43f5e', '#a855f7'] },
-    { id: 'amber', name: 'Sunset Amber', swatches: ['#f59e0b', '#f97316'] },
-  ];
-
-  const ADMIN_THEME_MAP = {
-    blue: {
-      gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      pageBg: '#f1f5f9', cardBg: '#ffffff', border: '#e2e8f0',
-      text: '#0f172a', muted: '#64748b', primary: '#6366f1',
-      shadow: '0 10px 30px rgba(102,126,234,0.18)'
-    },
-    dark: {
-      gradient: 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
-      pageBg: '#0b1220', cardBg: '#1f2a44', border: '#2b3a55',
-      text: '#f8fafc', muted: '#cbd5f1', primary: '#a5b4fc',
-      shadow: '0 10px 30px rgba(0,0,0,0.45)'
-    },
-    green: {
-      gradient: 'linear-gradient(135deg, #10b981 0%, #0d9488 100%)',
-      pageBg: '#ecfdf5', cardBg: '#ffffff', border: '#d1fae5',
-      text: '#064e3b', muted: '#6b7280', primary: '#10b981',
-      shadow: '0 10px 30px rgba(16,185,129,0.16)'
-    },
-    rose: {
-      gradient: 'linear-gradient(135deg, #f43f5e 0%, #a855f7 100%)',
-      pageBg: '#fff1f2', cardBg: '#ffffff', border: '#fecdd3',
-      text: '#881337', muted: '#6b7280', primary: '#f43f5e',
-      shadow: '0 10px 30px rgba(244,63,94,0.16)'
-    },
-    amber: {
-      gradient: 'linear-gradient(135deg, #f59e0b 0%, #f97316 100%)',
-      pageBg: '#fffbeb', cardBg: '#ffffff', border: '#fde68a',
-      text: '#78350f', muted: '#6b7280', primary: '#f59e0b',
-      shadow: '0 10px 30px rgba(245,158,11,0.16)'
-    }
-  };
-
   const adminTheme = ADMIN_THEME_MAP[activeTheme] || ADMIN_THEME_MAP.blue;
 
   async function handleSaveTheme(themeId) {
@@ -795,6 +722,20 @@ export default function AdminPage() {
       setToast(localizeErrorMessage(err?.message) || 'Gagal menyimpan tema');
     } finally {
       setThemeLoading(false);
+    }
+  }
+
+  async function enableGmailPush() {
+    try {
+      const data = await fetchWithAdmin('/api/webhooks/gmail/watch', { method: 'POST' });
+      if (data?.status === 'ok') {
+        const expDate = data.expiration ? new Date(Number(data.expiration)).toLocaleDateString() : '~7 hari';
+        setToast(`Gmail Push aktif! Expire: ${expDate}`);
+      } else {
+        setToast(data?.error || 'Gagal mengaktifkan push');
+      }
+    } catch (err) {
+      setToast(localizeErrorMessage(err?.message) || 'Gagal mengaktifkan Gmail Push');
     }
   }
 
@@ -1107,368 +1048,47 @@ export default function AdminPage() {
         </header>
 
         {section === 'overview' && (
-          <>
-            <div className="admin-guide mb-3">
-              <h6 className="mb-2">Panduan Cepat (Untuk Pengguna Baru)</h6>
-              <div className="admin-guide-grid">
-                <div className="admin-guide-item">
-                  <strong>1. Atur Domain</strong>
-                  <p className="mb-0">Masuk ke menu Domain, lalu tambahkan domain aktif yang boleh dipakai alias.</p>
-                </div>
-                <div className="admin-guide-item">
-                  <strong>2. Buat Alias + Filter</strong>
-                  <p className="mb-0">Di menu Alias, isi alamat alias lalu atur filter email agar sesuai kebutuhan.</p>
-                </div>
-                <div className="admin-guide-item">
-                  <strong>3. Cek Kotak Masuk</strong>
-                  <p className="mb-0">Di menu Kotak Masuk, admin bisa melihat semua email alias tanpa dibatasi filter.</p>
-                </div>
-                <div className="admin-guide-item">
-                  <strong>4. Pantau Log</strong>
-                  <p className="mb-0">Gunakan menu Log Email untuk audit aktivitas per alias secara cepat.</p>
-                </div>
-              </div>
-            </div>
-
-            {loading && !stats ? (
-              <div className="admin-kpi-grid">
-                {[0, 1, 2, 3, 4].map((idx) => (
-                  <div key={idx} className="admin-kpi-card admin-skeleton-card">
-                    <div className="admin-skeleton" style={{ width: 36, height: 36, borderRadius: 12 }} />
-                    <div className="admin-skeleton admin-skeleton-line" style={{ width: '60%' }} />
-                    <div className="admin-skeleton" style={{ width: '40%', height: 22, marginTop: 12 }} />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="admin-kpi-grid">
-                <article className="admin-kpi-card">
-                  <div className="admin-kpi-icon bg-primary-subtle text-primary"><i className="bi bi-at" /></div>
-                  <p className="admin-kpi-label">Total Alias</p>
-                  <h3 className="admin-kpi-value">{stats?.totalAliases ?? aliasRows.length}</h3>
-                </article>
-                <article className="admin-kpi-card">
-                  <div className="admin-kpi-icon bg-success-subtle text-success"><i className="bi bi-envelope-check" /></div>
-                  <p className="admin-kpi-label">Log Email Tersimpan</p>
-                  <h3 className="admin-kpi-value">{logs.length}</h3>
-                </article>
-                <article className="admin-kpi-card">
-                  <div className="admin-kpi-icon bg-warning-subtle text-warning"><i className="bi bi-globe2" /></div>
-                  <p className="admin-kpi-label">Domain Aktif</p>
-                  <h3 className="admin-kpi-value">{activeDomains.length}</h3>
-                </article>
-                <article className="admin-kpi-card">
-                  <div className="admin-kpi-icon bg-info-subtle text-info"><i className="bi bi-graph-up-arrow" /></div>
-                  <p className="admin-kpi-label">Alias Dengan Trafik</p>
-                  <h3 className="admin-kpi-value">{aliasesWithTraffic}</h3>
-                </article>
-                <article className="admin-kpi-card">
-                  <div className="admin-kpi-icon bg-danger-subtle text-danger"><i className="bi bi-archive" /></div>
-                  <p className="admin-kpi-label">Alias Diarsipkan</p>
-                  <h3 className="admin-kpi-value">{inactiveAliases}</h3>
-                </article>
-              </div>
-            )}
-
-            <div className="row g-4 mt-1">
-              <div className="col-12 col-xl-6">
-                <div className="admin-panel">
-                  <div className="admin-panel-header">
-                    <h5 className="mb-0">Alias Paling Aktif</h5>
-                    <button className="btn btn-sm btn-outline-primary" onClick={() => setSection('aliases')}>Kelola Alias</button>
-                  </div>
-                  {aliasRows.length === 0 ? (
-                    <p className="text-muted small mb-0">Belum ada data alias.</p>
-                  ) : (
-                    <>
-                      {overviewAliasPagination.total > 0 && (
-                        <div className="admin-pagination-bar">
-                          <small className="text-muted">{overviewAliasPagination.rows.length} / {overviewAliasPagination.total} alias</small>
-                          <div className="admin-page-controls">
-                            <button
-                              className="admin-page-btn"
-                              onClick={() => setOverviewAliasPage((p) => Math.max(1, p - 1))}
-                              disabled={overviewAliasPagination.page <= 1}
-                            >
-                              <i className="bi bi-chevron-left" />
-                            </button>
-                            <span className="admin-page-info">{overviewAliasPagination.page} / {overviewAliasPagination.totalPages}</span>
-                            <button
-                              className="admin-page-btn"
-                              onClick={() => setOverviewAliasPage((p) => Math.min(overviewAliasPagination.totalPages, p + 1))}
-                              disabled={overviewAliasPagination.page >= overviewAliasPagination.totalPages}
-                            >
-                              <i className="bi bi-chevron-right" />
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      <div className="table-responsive">
-                        <table className="table table-hover align-middle mb-0 admin-table">
-                          <thead>
-                            <tr>
-                              <th>Alias</th>
-                              <th className="text-end">Email</th>
-                              <th className="text-end">Akses</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {overviewAliasPagination.rows.map((row) => (
-                              <tr key={row.address}>
-                                <td>
-                                  <div className="fw-600 text-break">{row.address}</div>
-                                  <small className="text-muted">Email terakhir: {formatDateTime(row.latestSeenAt)}</small>
-                                </td>
-                                <td className="text-end fw-600">{row.totalEmails}</td>
-                                <td className="text-end">{row.hits}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-              <div className="col-12 col-xl-6">
-                <div className="admin-panel">
-                  <div className="admin-panel-header">
-                    <h5 className="mb-0">Email Masuk Terbaru</h5>
-                    <button className="btn btn-sm btn-outline-primary" onClick={() => setSection('logs')}>Lihat Semua Log</button>
-                  </div>
-                  {logs.length === 0 ? (
-                    <p className="text-muted small mb-0">Belum ada log email.</p>
-                  ) : (
-                    <>
-                      {overviewLatestPagination.total > 0 && (
-                        <div className="admin-pagination-bar">
-                          <small className="text-muted">{overviewLatestPagination.rows.length} / {overviewLatestPagination.total} log</small>
-                          <div className="admin-page-controls">
-                            <button
-                              className="admin-page-btn"
-                              onClick={() => setOverviewLogPage((p) => Math.max(1, p - 1))}
-                              disabled={overviewLatestPagination.page <= 1}
-                            >
-                              <i className="bi bi-chevron-left" />
-                            </button>
-                            <span className="admin-page-info">{overviewLatestPagination.page} / {overviewLatestPagination.totalPages}</span>
-                            <button
-                              className="admin-page-btn"
-                              onClick={() => setOverviewLogPage((p) => Math.min(overviewLatestPagination.totalPages, p + 1))}
-                              disabled={overviewLatestPagination.page >= overviewLatestPagination.totalPages}
-                            >
-                              <i className="bi bi-chevron-right" />
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                      <div className="admin-timeline">
-                        {overviewLatestPagination.rows.map((entry) => (
-                          <div key={entry.id} className="admin-timeline-item">
-                            <div className="admin-timeline-dot" />
-                            <div className="admin-timeline-content">
-                              <div className="d-flex justify-content-between align-items-start gap-2">
-                                <strong className="text-break">{entry.alias || 'alias-tidak-dikenal'}</strong>
-                                <small className="text-muted text-nowrap">{formatDateTime(entry.lastSeenAt)}</small>
-                              </div>
-                              <div className="small fw-500 text-break">{entry.subject || '(tanpa subjek)'}</div>
-                              <div className="small text-muted text-break">{entry.from || '-'}</div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          </>
+          <AdminOverviewSection
+            activeDomains={activeDomains}
+            aliasRows={aliasRows}
+            aliasesWithTraffic={aliasesWithTraffic}
+            inactiveAliases={inactiveAliases}
+            loading={loading}
+            overviewAliasPagination={overviewAliasPagination}
+            overviewLatestPagination={overviewLatestPagination}
+            setOverviewAliasPage={setOverviewAliasPage}
+            setOverviewLogPage={setOverviewLogPage}
+            setSection={setSection}
+            stats={stats}
+          />
         )}
-
         {section === 'aliases' && (
           <div className="admin-section-stack">
-            {/* === Form Buat Alias === */}
-            <div className="admin-panel">
-              <div className="admin-panel-header">
-                <h5 className="mb-0"><i className="bi bi-plus-circle me-2" />Buat Alias Baru</h5>
-              </div>
-
-              <div className="p-4">
-                {/* === Alamat Email - Style seperti halaman user === */}
-                <label className="form-label fw-bold mb-2" style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--bs-secondary-color)' }}>
-                  Alamat Email Anda
-                </label>
-
-                {/* Input group besar */}
-                <div style={{
-                  display: 'flex', alignItems: 'stretch',
-                  border: '1.5px solid var(--bs-border-color)', borderRadius: '12px',
-                  overflow: 'hidden', background: 'var(--bs-tertiary-bg)', marginBottom: '0.75rem',
-                }}>
-                  <input
-                    value={aliasFormAddress.split('@')[0] || ''}
-                    onChange={(e) => {
-                      const domain = aliasFormAddress.includes('@') ? aliasFormAddress.split('@')[1] : (activeDomains[0]?.name || '');
-                      setAliasFormAddress(e.target.value.replace(/\s+/g, '').toLowerCase() + (domain ? '@' + domain : ''));
-                    }}
-                    style={{
-                      flex: 1, border: 'none', background: 'transparent',
-                      padding: '0.875rem 1rem', fontSize: '1rem', fontWeight: 500,
-                      outline: 'none', minWidth: 0,
-                    }}
-                    placeholder="username"
-                    spellCheck="false"
-                  />
-                  <span style={{ padding: '0 0.5rem', display: 'flex', alignItems: 'center', fontSize: '1rem', color: 'var(--bs-secondary-color)', fontWeight: 600 }}>@</span>
-                  <select
-                    value={aliasFormAddress.includes('@') ? aliasFormAddress.split('@')[1] : ''}
-                    onChange={(e) => {
-                      const local = aliasFormAddress.split('@')[0] || '';
-                      setAliasFormAddress(local + '@' + e.target.value);
-                    }}
-                    style={{
-                      border: 'none', background: 'transparent',
-                      padding: '0.875rem 0.75rem', fontSize: '0.95rem', fontWeight: 500,
-                      outline: 'none', cursor: 'pointer', maxWidth: 200, minWidth: 120,
-                      appearance: 'none', WebkitAppearance: 'none',
-                    }}
-                  >
-                    {activeDomains.length === 0 && <option value="">-</option>}
-                    {activeDomains.map((d) => (
-                      <option key={d.name} value={d.name}>{d.name}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Actions row */}
-                <div className="d-flex gap-2 mb-3" style={{ flexWrap: 'wrap' }}>
-                  <button
-                    className="btn btn-primary"
-                    style={{ borderRadius: '10px', padding: '0.6rem 1.25rem', fontWeight: 600, fontSize: '0.9rem' }}
-                    onClick={saveAliasFilter}
-                    disabled={loading || !aliasFormAddress.includes('@')}
-                  >
-                    <i className="bi bi-floppy me-2" />Simpan Alias
-                  </button>
-                  <button
-                    className="btn btn-outline-primary"
-                    style={{ borderRadius: '10px', padding: '0.6rem 1rem', fontWeight: 600, fontSize: '0.9rem' }}
-                    type="button"
-                    onClick={() => {
-                      const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-                      let rand = '';
-                      for (let i = 0; i < 10; i++) rand += chars[Math.floor(Math.random() * chars.length)];
-                      const domain = aliasFormAddress.includes('@') ? aliasFormAddress.split('@')[1] : (activeDomains[0]?.name || '');
-                      setAliasFormAddress(rand + (domain ? '@' + domain : ''));
-                    }}
-                  >
-                    <i className="bi bi-shuffle me-1" />Acak
-                  </button>
-                  <button
-                    className="btn btn-outline-secondary"
-                    style={{ borderRadius: '10px', padding: '0.6rem 1rem', fontWeight: 600, fontSize: '0.9rem' }}
-                    onClick={resetAliasForm}
-                  >
-                    <i className="bi bi-eraser me-1" />Reset
-                  </button>
-                </div>
-
-                {/* Preview alamat */}
-                {aliasFormAddress && aliasFormAddress.includes('@') && (
-                  <div className="rounded-3 px-3 py-2 mb-3" style={{ background: 'rgba(var(--bs-primary-rgb), 0.06)', border: '1px solid rgba(var(--bs-primary-rgb), 0.15)', fontFamily: 'monospace', fontSize: '0.9rem' }}>
-                    <i className="bi bi-envelope-fill text-primary me-2" />{aliasFormAddress}
-                  </div>
-                )}
-
-                {/* === PIN Proteksi === */}
-                <div className="mb-3">
-                  <label className="form-label fw-bold mb-2" style={{ fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--bs-secondary-color)' }}>
-                    <i className="bi bi-shield-lock me-1" />PIN Proteksi
-                  </label>
-                  <div style={{
-                    display: 'flex', alignItems: 'stretch',
-                    border: '1.5px solid var(--bs-border-color)', borderRadius: '12px',
-                    overflow: 'hidden', background: 'var(--bs-tertiary-bg)',
-                    maxWidth: 360,
-                  }}>
-                    <span style={{ padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', color: 'var(--bs-secondary-color)' }}>
-                      <i className="bi bi-lock" />
-                    </span>
-                    <input
-                      value={aliasPin}
-                      onChange={(e) => setAliasPin(e.target.value)}
-                      style={{
-                        flex: 1, border: 'none', background: 'transparent',
-                        padding: '0.75rem 0.5rem', fontSize: '1rem', fontWeight: 500,
-                        outline: 'none', letterSpacing: '0.1em',
-                      }}
-                      placeholder="Kosongkan jika tidak pakai"
-                      type="text"
-                      autoComplete="off"
-                    />
-                  </div>
-                  <small className="text-muted d-block mt-1">User harus masukkan PIN ini untuk membuka inbox alias.</small>
-                </div>
-
-                {/* Filter - React-controlled toggle */}
-                <div className="mb-3">
-                  <button
-                    className="btn btn-sm w-100 d-flex align-items-center justify-content-between"
-                    type="button"
-                    onClick={() => setAliasFilterOpen((v) => !v)}
-                    style={{
-                      background: aliasFilterOpen ? 'rgba(var(--bs-primary-rgb), 0.08)' : 'var(--bs-tertiary-bg)',
-                      border: aliasFilterOpen ? '1px solid rgba(var(--bs-primary-rgb), 0.25)' : '1px solid var(--bs-border-color)',
-                      borderRadius: '8px',
-                      padding: '0.6rem 1rem',
-                      transition: 'all 0.2s',
-                    }}
-                  >
-                    <span style={{ fontWeight: 500, fontSize: '0.85rem' }}>
-                      <i className={`bi ${aliasFilterOpen ? 'bi-funnel-fill text-primary' : 'bi-funnel'} me-2`} />
-                      Filter Email {aliasFilterOpen ? '' : '(opsional)'}
-                    </span>
-                    <i className={`bi bi-chevron-${aliasFilterOpen ? 'up' : 'down'} text-muted`} style={{ fontSize: '0.75rem' }} />
-                  </button>
-                  {aliasFilterOpen && (
-                    <div className="mt-2 p-3 rounded-3" style={{ background: 'var(--bs-tertiary-bg)', border: '1px solid var(--bs-border-color)' }}>
-                      <div className="d-flex align-items-center justify-content-between mb-3">
-                        <span className="small fw-bold text-muted">Aturan Filter</span>
-                        <button className="btn btn-xs btn-outline-info" type="button" onClick={applyNetflixPreset}>
-                          <i className="bi bi-lightning-charge me-1" />Preset Netflix
-                        </button>
-                      </div>
-                      <div className="row g-2">
-                        <div className="col-12 col-md-6">
-                          <label className="form-label small mb-1">Subjek Persis</label>
-                          <input className="form-control form-control-sm" placeholder="kode akses sementaramu" value={aliasSubjectExact} onChange={(e) => setAliasSubjectExact(e.target.value)} />
-                        </div>
-                        <div className="col-12 col-md-6">
-                          <label className="form-label small mb-1">Subjek Mengandung</label>
-                          <input className="form-control form-control-sm" placeholder="kode akses, verifikasi" value={aliasSubjectIncludes} onChange={(e) => setAliasSubjectIncludes(e.target.value)} />
-                        </div>
-                        <div className="col-12 col-md-6">
-                          <label className="form-label small mb-1">Subjek Dikecualikan</label>
-                          <input className="form-control form-control-sm" placeholder="newsletter, promosi" value={aliasSubjectExcludes} onChange={(e) => setAliasSubjectExcludes(e.target.value)} />
-                        </div>
-                        <div className="col-12 col-md-6">
-                          <label className="form-label small mb-1">Pengirim Mengandung</label>
-                          <input className="form-control form-control-sm" placeholder="no-reply@x.com" value={aliasSenderIncludes} onChange={(e) => setAliasSenderIncludes(e.target.value)} />
-                        </div>
-                        <div className="col-12 col-md-6">
-                          <label className="form-label small mb-1">Kata Kunci</label>
-                          <input className="form-control form-control-sm" placeholder="kode verifikasi, akun" value={aliasKeywordIncludes} onChange={(e) => setAliasKeywordIncludes(e.target.value)} />
-                        </div>
-                        <div className="col-12 col-md-6">
-                          <label className="form-label small mb-1">Regex Kustom</label>
-                          <input className="form-control form-control-sm" placeholder="(otp|code)\\s*..." value={aliasCustomRegex} onChange={(e) => setAliasCustomRegex(e.target.value)} />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+            <AdminAliasCreateForm
+              activeDomains={activeDomains}
+              aliasFilterMode={aliasFilterMode}
+              aliasFormAddress={aliasFormAddress}
+              aliasKeywordIncludes={aliasKeywordIncludes}
+              aliasCustomRegex={aliasCustomRegex}
+              aliasPin={aliasPin}
+              aliasSenderIncludes={aliasSenderIncludes}
+              aliasSubjectExact={aliasSubjectExact}
+              aliasSubjectExcludes={aliasSubjectExcludes}
+              aliasSubjectIncludes={aliasSubjectIncludes}
+              loading={loading}
+              onGenerateAlias={generateAliasAddress}
+              onReset={resetAliasForm}
+              onSave={saveAliasFilter}
+              setAliasFilterMode={setAliasFilterPreset}
+              setAliasFormAddress={setAliasFormAddress}
+              setAliasKeywordIncludes={setAliasKeywordIncludes}
+              setAliasCustomRegex={setAliasCustomRegex}
+              setAliasPin={setAliasPin}
+              setAliasSenderIncludes={setAliasSenderIncludes}
+              setAliasSubjectExact={setAliasSubjectExact}
+              setAliasSubjectExcludes={setAliasSubjectExcludes}
+              setAliasSubjectIncludes={setAliasSubjectIncludes}
+            />
 
             {/* === Daftar Alias === */}
             <div className="admin-panel admin-table-card">
@@ -1847,111 +1467,22 @@ export default function AdminPage() {
         )}
 
         {section === 'domains' && (
-          <div className="admin-panel">
-            <div className="admin-panel-header flex-wrap gap-2">
-              <h5 className="mb-0">Manajemen Domain</h5>
-              <div className="admin-toolbar-group">
-                <input
-                  className="form-control form-control-sm admin-toolbar-field"
-                  placeholder="Cari domain..."
-                  value={domainQuery}
-                  onChange={(e) => setDomainQuery(e.target.value)}
-                />
-                <select className="form-select form-select-sm admin-toolbar-field" value={domainFilterStatus} onChange={(e) => setDomainFilterStatus(e.target.value)}>
-                  <option value="all">Status: Semua</option>
-                  <option value="aktif">Status: Aktif</option>
-                  <option value="nonaktif">Status: Nonaktif</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="admin-add-row">
-              <label className="form-label mb-0">Domain baru:</label>
-              <input
-                className="form-control form-control-sm"
-                placeholder="example.com"
-                value={newDomain}
-                onChange={(e) => setNewDomain(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddDomain()}
-              />
-              <button className="btn btn-sm btn-primary" onClick={handleAddDomain} disabled={!newDomain.trim()}>
-                <i className="bi bi-plus-lg me-1" />Tambah Domain
-              </button>
-            </div>
-
-            <div className="admin-pagination-bar">
-              <small className="text-muted">{domainPagination.rows.length} / {domainPagination.total} domain</small>
-              <div className="admin-page-controls">
-                <button
-                  className="admin-page-btn"
-                  onClick={() => setDomainPage((p) => Math.max(1, p - 1))}
-                  disabled={domainPagination.page <= 1}
-                >
-                  <i className="bi bi-chevron-left" />
-                </button>
-                <span className="admin-page-info">{domainPagination.page} / {domainPagination.totalPages}</span>
-                <button
-                  className="admin-page-btn"
-                  onClick={() => setDomainPage((p) => Math.min(domainPagination.totalPages, p + 1))}
-                  disabled={domainPagination.page >= domainPagination.totalPages}
-                >
-                  <i className="bi bi-chevron-right" />
-                </button>
-              </div>
-            </div>
-
-            <div className="table-responsive">
-              <table className="table table-hover align-middle mb-0 admin-table">
-                <thead>
-                  <tr>
-                    <th>Domain</th>
-                    <th>Dibuat</th>
-                    <th>Status</th>
-                    <th>Aksi</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {domainRows.length === 0 && (
-                    <tr>
-                      <td colSpan={4}>
-                        <div className="admin-empty">
-                          <i className="bi bi-globe2" />
-                          <p>Belum ada domain yang dikonfigurasi.</p>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                  {domainPagination.rows.map((domain) => (
-                    <tr key={domain.name}>
-                      <td className="fw-600">{domain.name}</td>
-                      <td className="text-nowrap">{formatCompactDate(domain.createdAt)}</td>
-                      <td>
-                        <span className={`badge ${domain.active !== false ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary'}`}>
-                          {domain.active !== false ? 'Aktif' : 'Nonaktif'}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="admin-row-actions">
-                          <button
-                            className="btn btn-sm btn-outline-primary"
-                            onClick={() => toggleDomain(domain.name, domain.active === false)}
-                            disabled={loading}
-                          >
-                            {domain.active !== false ? 'Nonaktifkan' : 'Aktifkan'}
-                          </button>
-                          <button className="btn btn-sm btn-icon btn-outline-danger" title="Hapus domain" onClick={() => removeDomain(domain.name)} disabled={loading}>
-                            <i className="bi bi-trash" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <AdminDomainsSection
+            domainFilterStatus={domainFilterStatus}
+            domainPagination={domainPagination}
+            domainQuery={domainQuery}
+            domainRows={domainRows}
+            loading={loading}
+            newDomain={newDomain}
+            onAddDomain={handleAddDomain}
+            onRemoveDomain={removeDomain}
+            onToggleDomain={toggleDomain}
+            setDomainFilterStatus={setDomainFilterStatus}
+            setDomainPage={setDomainPage}
+            setDomainQuery={setDomainQuery}
+            setNewDomain={setNewDomain}
+          />
         )}
-
         {section === 'api-keys' && (
           <div className="row g-4">
             <div className="col-12 col-xl-5">
@@ -2155,215 +1686,21 @@ export default function AdminPage() {
           </div>
         )}
 
-        {section === 'tampilan' && (
-          <div className="row g-4">
-            <div className="col-12 col-lg-8">
-              <div className="admin-panel">
-                <h5 className="mb-1">Tema Halaman Utama</h5>
-                <p className="text-muted small mb-4">
-                  Pilih tema warna yang akan ditampilkan kepada pengguna di halaman utama PBS Mail.
-                  Perubahan langsung tersimpan dan berlaku untuk semua pengguna.
-                </p>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '1rem' }}>
-                  {ADMIN_THEMES.map((th) => (
-                    <button
-                      key={th.id}
-                      type="button"
-                      onClick={() => handleSaveTheme(th.id)}
-                      disabled={themeLoading}
-                      style={{
-                        border: `2px solid ${activeTheme === th.id ? th.swatches[0] : 'transparent'}`,
-                        borderRadius: '16px',
-                        padding: '1rem',
-                        background: activeTheme === th.id ? `${th.swatches[0]}12` : 'var(--bs-body-bg, #ffffff)',
-                        cursor: themeLoading ? 'wait' : 'pointer',
-                        textAlign: 'left',
-                        transition: 'all 0.2s',
-                        boxShadow: activeTheme === th.id ? `0 0 0 1px ${th.swatches[0]}40, 0 4px 12px ${th.swatches[0]}25` : '0 1px 4px rgba(0,0,0,0.08)',
-                      }}
-                    >
-                      {/* Color swatch strip */}
-                      <div style={{ display: 'flex', gap: '0.3rem', marginBottom: '0.75rem' }}>
-                        {th.swatches.map((clr, i) => (
-                          <div key={i} style={{ flex: 1, height: 28, borderRadius: '6px', background: clr }} />
-                        ))}
-                      </div>
-                      <div style={{ fontWeight: 600, fontSize: '0.88rem' }}>{th.name}</div>
-                      {activeTheme === th.id && (
-                        <div style={{ fontSize: '0.75rem', color: th.swatches[0], marginTop: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                          <i className="bi bi-check-circle-fill" /> Aktif
-                        </div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-                {themeLoading && (
-                  <div className="d-flex align-items-center gap-2 mt-3 text-muted">
-                    <div className="spinner-border spinner-border-sm" role="status" />
-                    <span className="small">Menyimpan tema...</span>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="col-12 col-lg-4">
-              <div className="admin-panel h-100">
-                <h5 className="mb-3">Pratinjau Warna</h5>
-                {(() => {
-                  const th = ADMIN_THEMES.find((x) => x.id === activeTheme) || ADMIN_THEMES[0];
-                  return (
-                    <>
-                      <div style={{
-                        borderRadius: '12px', overflow: 'hidden',
-                        boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
-                        border: '1px solid rgba(0,0,0,0.07)',
-                      }}>
-                        <div style={{
-                          background: `linear-gradient(135deg, ${th.swatches[0]}, ${th.swatches[1]})`,
-                          padding: '1.25rem 1rem', color: '#fff',
-                        }}>
-                          <div style={{ fontWeight: 700, fontSize: '0.95rem', marginBottom: '0.2rem' }}>PBS Mail</div>
-                          <div style={{ opacity: 0.8, fontSize: '0.78rem' }}>Email Sementara, Tanpa Ribet</div>
-                        </div>
-                        <div style={{ padding: '1rem', background: '#fff' }}>
-                          <div style={{
-                            border: `1.5px solid ${th.swatches[0]}40`,
-                            borderRadius: '8px', padding: '0.7rem 1rem',
-                            fontSize: '0.8rem', color: '#64748b', fontFamily: 'monospace',
-                            marginBottom: '0.75rem', background: '#f8fafc',
-                          }}>
-                            alias@domain.com
-                          </div>
-                          <div style={{
-                            background: th.swatches[0], color: '#fff',
-                            borderRadius: '8px', padding: '0.6rem 1rem',
-                            fontSize: '0.82rem', fontWeight: 600, textAlign: 'center',
-                          }}>
-                            Salin Alamat
-                          </div>
-                        </div>
-                      </div>
-                      <p className="small text-muted mt-3 mb-0">
-                        Tema <strong>{th.name}</strong> saat ini aktif.
-                      </p>
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
-          </div>
-        )}
+        {section === 'tampilan' && <AdminAppearanceSection activeTheme={activeTheme} themeLoading={themeLoading} onSaveTheme={handleSaveTheme} />}
 
         {section === 'security' && (
-          <div className="row g-4">
-            <div className="col-12 col-lg-6">
-              <div className="admin-panel h-100">
-                <h5 className="mb-3">Kontrol OAuth</h5>
-                <p className="text-muted small">Kelola siklus token Gmail dengan aman dari satu tempat.</p>
-                <div className="d-grid gap-2">
-                  <Link href="/login" target="_blank" className="btn btn-primary">
-                    <i className="bi bi-google me-2" /> Mulai OAuth
-                  </Link>
-                  <button className="btn btn-outline-danger" onClick={revokeToken} disabled={loading}>
-                    <i className="bi bi-shield-x me-2" /> Cabut Token
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div className="col-12 col-lg-6">
-              <div className="admin-panel h-100">
-                <h5 className="mb-3">Gmail Push Notification</h5>
-                <p className="text-muted small">Aktifkan push agar email masuk real-time tanpa polling. Perlu diperbarui setiap 7 hari.</p>
-                <div className="d-grid gap-2">
-                  <button
-                    className="btn btn-success"
-                    disabled={loading}
-                    onClick={async () => {
-                      try {
-                        const data = await fetchWithAdmin('/api/webhooks/gmail/watch', { method: 'POST' });
-                        if (data?.status === 'ok') {
-                          const expDate = data.expiration ? new Date(Number(data.expiration)).toLocaleDateString() : '~7 hari';
-                          setToast(`Gmail Push aktif! Expire: ${expDate}`);
-                        } else {
-                          setToast(data?.error || 'Gagal mengaktifkan push');
-                        }
-                      } catch (err) {
-                        setToast(localizeErrorMessage(err?.message) || 'Gagal mengaktifkan Gmail Push');
-                      }
-                    }}
-                  >
-                    <i className="bi bi-bell-fill me-2" /> Aktifkan Gmail Push
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div className="col-12 col-lg-6">
-              <div className="admin-panel h-100">
-                <h5 className="mb-3">Ringkasan Penyimpanan & Kesehatan</h5>
-                <ul className="list-group list-group-flush">
-                  <li className="list-group-item d-flex justify-content-between px-0">
-                    <span className="text-muted">Mode Penyimpanan</span>
-                    <strong>{stats?.storage?.mode || '-'}</strong>
-                  </li>
-                  <li className="list-group-item d-flex justify-content-between px-0">
-                    <span className="text-muted">Total Domain</span>
-                    <strong>{domains.length}</strong>
-                  </li>
-                  <li className="list-group-item d-flex justify-content-between px-0">
-                    <span className="text-muted">Total Akses Alias</span>
-                    <strong>{stats?.totalHits ?? aliasRows.reduce((sum, r) => sum + (r.hits || 0), 0)}</strong>
-                  </li>
-                  <li className="list-group-item d-flex justify-content-between px-0">
-                    <span className="text-muted">Alias Terbaru</span>
-                    <strong>{formatCompactDate(stats?.lastAliasCreatedAt)}</strong>
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </div>
+          <AdminSecuritySection
+            aliasRows={aliasRows}
+            domains={domains}
+            loading={loading}
+            onEnableGmailPush={enableGmailPush}
+            onRevokeToken={revokeToken}
+            stats={stats}
+          />
         )}
       </section>
 
-      {inboxDetail && (
-        <div className="modal fade show d-block" style={{ background: 'rgba(15,23,42,0.45)' }} onClick={() => setInboxDetail(null)}>
-          <div className="modal-dialog modal-xl modal-dialog-scrollable" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-content">
-              <div className="modal-header border-0 bg-light">
-                <div className="w-100 d-flex align-items-start justify-content-between gap-2">
-                  <div>
-                    <h5 className="modal-title mb-1">{inboxDetail.loading ? 'Memuat pesan...' : inboxDetail.subject || '(tanpa subjek)'}</h5>
-                    {!inboxDetail.loading && !inboxDetail.error && (
-                      <small className="text-muted">{inboxDetail.from || '-'} | {formatDateTime(inboxDetail.date)}</small>
-                    )}
-                  </div>
-                  <button type="button" className="btn-close" onClick={() => setInboxDetail(null)} />
-                </div>
-              </div>
-              <div className="modal-body">
-                {inboxDetail.loading && (
-                  <div className="text-center text-muted py-5">
-                    <div className="spinner-border spinner-border-sm mb-2" role="status" />
-                    <div className="small">Memuat detail pesan...</div>
-                  </div>
-                )}
-                {inboxDetail.error && (
-                  <div className="alert alert-danger mb-0">{inboxDetail.error}</div>
-                )}
-                {!inboxDetail.loading && !inboxDetail.error && (
-                  <div className="admin-message-view">
-                    {inboxDetail.bodyHtml ? (
-                      <div dangerouslySetInnerHTML={{ __html: inboxDetail.bodyHtml }} />
-                    ) : inboxDetail.bodyText ? (
-                      <pre className="admin-message-pre">{inboxDetail.bodyText}</pre>
-                    ) : (
-                      <p className="text-muted small mb-0">Tidak ada konten</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <AdminMessageModal detail={inboxDetail} onClose={() => setInboxDetail(null)} />
 
       {toast && (
         <div className="admin-toast">
