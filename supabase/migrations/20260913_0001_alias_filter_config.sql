@@ -5,10 +5,10 @@ add column if not exists filter_config jsonb not null default '{}'::jsonb;
 
 -- Migrate legacy app_kv alias_filters entries when present.
 update public.app_aliases as alias
-set filter_config = filters.value -> alias.address
+set filter_config = filters.value -> lower(alias.address)
 from public.app_kv as filters
 where filters.key = 'alias_filters'
-  and filters.value ? alias.address
+  and filters.value ? lower(alias.address)
   and alias.filter_config = '{}'::jsonb;
 
 alter table public.app_aliases disable row level security;
