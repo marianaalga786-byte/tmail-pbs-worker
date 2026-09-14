@@ -134,7 +134,8 @@ supabase/
 │   ├── 20260206_0001_app_tables.sql
 │   ├── 20260421_0001_partner_api.sql
 │   ├── 20260524_0001_alias_pin.sql
-│   └── 20260912_0001_cloudflare_email_messages.sql
+│   ├── 20260912_0001_cloudflare_email_messages.sql
+│   └── 20260913_0001_alias_filter_config.sql
 ├── schema.template.sql
 └── schema.tables.template.sql
 ```

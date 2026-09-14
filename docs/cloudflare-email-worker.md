@@ -182,6 +182,8 @@ GET /api/admin/messages/:id
 
 Jika `app_messages` belum tersedia, aplikasi masih fallback ke Gmail API. Jika tabel sudah tersedia tetapi alias belum punya email, API mengembalikan inbox kosong tanpa memanggil Gmail.
 
+Filter alias diterapkan saat webhook menerima email. Email yang tidak cocok dengan filter tidak disimpan ke `app_messages` dan tidak tampil di inbox TMail. Jika `BACKUP_EMAIL` Worker diisi, salinan email masih dapat diteruskan ke Gmail.
+
 ## Catatan PIN Alias
 
 PIN tetap divalidasi sebelum inbox ditampilkan. Email tetap disimpan saat masuk, tetapi user publik tetap harus memasukkan PIN untuk membaca alias yang dilindungi.

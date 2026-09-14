@@ -47,6 +47,12 @@ Migration penting untuk mode Worker:
 supabase/migrations/20260912_0001_cloudflare_email_messages.sql
 ```
 
+Migration penting untuk menyimpan filter alias bersama PIN dan metadata alias:
+
+```text
+supabase/migrations/20260913_0001_alias_filter_config.sql
+```
+
 Jika ingin menjalankan SQL manual, gunakan:
 
 ```sql

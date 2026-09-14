@@ -7,7 +7,8 @@ create table if not exists public.app_aliases (
   last_used_at timestamptz,
   hits integer not null default 0,
   active boolean not null default true,
-  pin_hash text
+  pin_hash text,
+  filter_config jsonb not null default '{}'::jsonb
 );
 
 create table if not exists public.app_domains (

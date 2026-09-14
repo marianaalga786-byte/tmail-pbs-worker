@@ -313,9 +313,14 @@ export default function AdminPage() {
   }, [aliases, aliasLogMap, aliasQuery, aliasSort, aliasFilterStatus]);
 
   const aliasPageSize = 25;
+  const aliasTabRows = useMemo(() => {
+    if (aliasListTab === 'configured') return aliasRows.filter((row) => hasAliasConfig(row));
+    if (aliasListTab === 'plain') return aliasRows.filter((row) => !hasAliasConfig(row));
+    return aliasRows;
+  }, [aliasListTab, aliasRows]);
   const aliasPagination = useMemo(
-    () => paginateRows(aliasRows, aliasPage, aliasPageSize),
-    [aliasRows, aliasPage]
+    () => paginateRows(aliasTabRows, aliasPage, aliasPageSize),
+    [aliasTabRows, aliasPage]
   );
   const pagedAliases = aliasPagination.rows;
   const aliasPageCount = aliasPagination.totalPages;
@@ -1121,9 +1126,9 @@ export default function AdminPage() {
               <div style={{ borderBottom: '1px solid var(--bs-border-color)', padding: '0 1rem' }}>
                 <div className="d-flex" style={{ gap: '0' }}>
                   {[
-                    { key: 'all', label: 'Semua', icon: 'bi-collection', count: pagedAliases.length },
-                    { key: 'configured', label: 'Dikonfigurasi', icon: 'bi-gear-fill', count: pagedAliases.filter((r) => hasAliasConfig(r)).length },
-                    { key: 'plain', label: 'Tanpa Konfigurasi', icon: 'bi-envelope', count: pagedAliases.filter((r) => !hasAliasConfig(r)).length },
+                    { key: 'all', label: 'Semua', icon: 'bi-collection', count: aliasRows.length },
+                    { key: 'configured', label: 'Dikonfigurasi', icon: 'bi-gear-fill', count: aliasRows.filter((r) => hasAliasConfig(r)).length },
+                    { key: 'plain', label: 'Tanpa Konfigurasi', icon: 'bi-envelope', count: aliasRows.filter((r) => !hasAliasConfig(r)).length },
                   ].map((tab) => (
                     <button
                       key={tab.key}
@@ -1159,9 +1164,7 @@ export default function AdminPage() {
 
               {/* Table */}
               {(() => {
-                let rows = pagedAliases;
-                if (aliasListTab === 'configured') rows = pagedAliases.filter((r) => hasAliasConfig(r));
-                else if (aliasListTab === 'plain') rows = pagedAliases.filter((r) => !hasAliasConfig(r));
+                const rows = pagedAliases;
 
                 if (rows.length === 0) return (
                   <div className="admin-empty p-4">
