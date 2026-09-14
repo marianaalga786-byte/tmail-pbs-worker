@@ -208,7 +208,7 @@ Setelah Worker stabil, polling Gmail bisa dibuat lebih jarang atau fallback bisa
 | Domain not allowed | Domain belum aktif di admin app | Tambahkan domain di dashboard admin |
 | Pesan tidak muncul di UI | Migration belum jalan atau Worker belum route | Cek table `app_messages`, Worker logs, dan route Email Routing |
 | Email masuk Gmail tapi `app_messages` kosong | Worker forward berhasil tapi POST ke app gagal atau tidak terpanggil | Cek Worker logs, `APP_WEBHOOK_URL`, `WEBHOOK_SECRET`, dan `GET /api/webhooks/cloudflare-email` |
-| Email tidak masuk Gmail | `BACKUP_EMAIL` kosong atau forward gagal | Isi `BACKUP_EMAIL` dan pastikan destination address terverifikasi |
+| Email tidak masuk Gmail | `BACKUP_EMAIL` kosong, destination belum terverifikasi, atau forward gagal | Verifikasi alamat di Cloudflare Email Routing, cek Spam/Promotions Gmail, lalu lihat log `Inbound email forwarded to Gmail backup` atau `Failed to forward inbound email` di Worker Logs |
 | Supabase schema cache error | Migration baru belum terbaca PostgREST | Jalankan `notify pgrst, 'reload schema';` |
 
 ## Rekomendasi Produksi

@@ -360,7 +360,7 @@ Email juga masuk Gmail jika `BACKUP_EMAIL` diisi.
 | `App webhook returned 401` | Secret Worker dan app berbeda | Samakan `WEBHOOK_SECRET` dengan `CLOUDFLARE_EMAIL_WEBHOOK_SECRET` |
 | `App webhook returned 400` | Domain alias belum aktif atau recipient invalid | Tambahkan domain email di admin TMail |
 | `App webhook returned 500` | Error Supabase/schema/server | Cek response log, migration, dan Vercel logs |
-| Email tidak masuk Gmail | `BACKUP_EMAIL` kosong atau belum verified | Isi `BACKUP_EMAIL` dan verifikasi destination Gmail di Cloudflare |
+| Email tidak masuk Gmail | `BACKUP_EMAIL` kosong, destination belum verified, atau forward gagal | Verifikasi destination Gmail di Cloudflare, cek Spam/Promotions Gmail, lalu lihat Worker log forwarding |
 | TMail kosong tapi `app_messages` ada isi | Alias yang dibuka beda dengan kolom `alias` | Buka alias yang sama persis dengan email tujuan |
 
 ## 13. Catatan Produksi

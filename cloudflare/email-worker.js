@@ -13,10 +13,19 @@ export default {
   async email(message, env, ctx) {
     if (!env.APP_WEBHOOK_URL || !env.WEBHOOK_SECRET) {
       console.error('Missing APP_WEBHOOK_URL or WEBHOOK_SECRET Worker variable');
-      if (env.BACKUP_EMAIL) await message.forward(env.BACKUP_EMAIL);
+      if (env.BACKUP_EMAIL) {
+        try {
+          await message.forward(env.BACKUP_EMAIL);
+          console.log('Inbound email forwarded to Gmail backup while app webhook is unavailable');
+        } catch (error) {
+          console.error('Failed to forward inbound email:', formatWorkerError(error));
+        }
+      }
       return;
     }
 
+    // Start the backup delivery before parsing the raw stream for the app webhook.
+    const forwardToBackup = env.BACKUP_EMAIL ? message.forward(env.BACKUP_EMAIL) : null;
     const raw = await new Response(message.raw).arrayBuffer();
     const rawBase64 = arrayBufferToBase64(raw);
     const headers = {};
@@ -46,10 +55,7 @@ export default {
       })
     });
 
-    const jobs = [saveToApp];
-    if (env.BACKUP_EMAIL) {
-      jobs.push(message.forward(env.BACKUP_EMAIL));
-    }
+    const jobs = forwardToBackup ? [saveToApp, forwardToBackup] : [saveToApp];
 
     const results = await Promise.allSettled(jobs);
     const saveResult = results[0];
@@ -64,6 +70,8 @@ export default {
     const forwardResult = results[1];
     if (forwardResult?.status === 'rejected') {
       console.error('Failed to forward inbound email:', formatWorkerError(forwardResult.reason));
+    } else if (forwardResult?.status === 'fulfilled') {
+      console.log('Inbound email forwarded to Gmail backup', { backupEmail: env.BACKUP_EMAIL });
     }
   }
 };
